@@ -1,8 +1,8 @@
 export const contractConfig = {
     address: process.env.VUE_APP_CONTRACT_ADDRESS,
     url: {
-      'development': 'https://api.s0.b.hmny.io',
-      'production': 'https://api.s0.t.hmny.io'
+      'development': 'https://goerli.infura.io/v3/',
+      'production': 'https://mainnet.infura.io/v3/'
     },
     abi: [
         {

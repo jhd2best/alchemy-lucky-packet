@@ -37,6 +37,7 @@
 
 <script>
 import Clipboard from 'clipboard';
+import { ethers } from "ethers";
 
 export default {
   name: 'page-history',
@@ -74,11 +75,12 @@ export default {
         forbidClick: false,
         duration: 0,
       });
-      await this.parent.contract.methods.getMyPackets().call({
+      await this.parent.contract.getMyPackets({
         from: this.parent.addressHex,
         gasLimit: this.contractConfig.defaultGasLimit,
-        gasPrice: new this.parent.hmny.utils.Unit(this.contractConfig.defaultGasPrice).asGwei().toWei(),
       }).then((data) => {
+        console.log("data", data);
+
         if (data.length > 0) {
           this.packets = [];
           
@@ -88,9 +90,9 @@ export default {
               token: packet[0],
               packetId: packet[1],
               type: packet[2],
-              amount: this.parent.hmny.utils.fromWei(packet[3], 'eth'),
+              amount: ethers.utils.formatUnits(ethers.utils.parseUnits(packet[3], "wei"), "ether"),
               count: packet[4],
-              remainAmount: this.parent.hmny.utils.fromWei(packet[5], 'eth'),
+              remainAmount: ethers.utils.formatUnits(ethers.utils.parseUnits(packet[5], "wei"), "ether"),
               remainCount: packet[6],
               tokenName: this.tokenMap[packet[0]]?this.tokenMap[packet[0]]:'unknown HRC20 token',
               packetDesc: '',
@@ -115,27 +117,22 @@ export default {
           duration: 0,
         });
 
-        await this.parent.contract.methods.claimMyPacket(packetId).send({
+        const tx = await this.parent.contract.claimMyPacket(packetId, {
           gasLimit: this.contractConfig.defaultGasLimit,
-          gasPrice: new this.parent.hmny.utils.Unit(this.contractConfig.defaultGasPrice).asGwei().toWei(),
-        }).on('transactionHash', (hash) => {
-          console.log('hash', hash)
-        }).on('receipt', (receipt) => {
-          console.log('receipt', receipt)
-        }).on('confirmation', (confirmationNumber, receipt) => {
-          console.log('confirmationNumber', confirmationNumber, receipt)
-
-          this.getUserPackets(this.parent.address);
-
-          this.$notify({ type: 'success', message: 'withdraw lucky packet success' });
-        }).on('data', (event) => {
-          console.log("event", event);
-        }).on('error', (error) => {
-          console.log('error', error);
-
-          this.$notify({ type: 'danger', message: 'fail to withdraw lucky packet: '+error });
         });
 
+        try {
+          const receipt = await tx.wait();
+          console.log('receipt', receipt)
+        } catch (e) {
+          this.$notify({ type: 'danger', message: 'fail to withdraw lucky packet: '+e });
+          this.loadToast.clear();
+          return
+        }
+
+        await this.getUserPackets(this.parent.address);
+
+        this.$notify({ type: 'success', message: 'withdraw lucky packet success' });
         this.loadToast.clear();
       });
     },

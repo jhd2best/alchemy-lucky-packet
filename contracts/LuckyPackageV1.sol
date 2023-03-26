@@ -75,7 +75,7 @@ contract LuckyPackageV1 is EternalStorage, Ownable, Utils {
         setOwner(_owner);
         setArrayLimit(200);
         setDiscountStep(0.00005 ether);
-        setFee(1 ether);
+        setFee(100 gwei);
         boolStorage[keccak256("rs_multisender_initialized")] = true;
     }
 

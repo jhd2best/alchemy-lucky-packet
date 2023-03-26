@@ -18,7 +18,7 @@
             <template v-if="sendType == 2"><p class="field">{{ $t('send.singleAmount') }}</p></template>
           </div>
           <div class="input-wrap">
-            <input type="number" class="input dinMedium" placeholder="0.00" v-model="totalAmout" @blur="inputAmount">
+            <input type="number" class="input dinMedium" placeholder="0.00" v-model="totalAmount" @blur="inputAmount">
             <div class="token-selector">
               <img alt="" class="token-logo" src="https://assets.coingecko.com/coins/images/279/small/ethereum.png">
               <p class="token-symbol">ETH</p>
@@ -31,7 +31,7 @@
             <template v-if="sendType == 1">{{ $t('send.normalPacket') }}</template>
             <template v-if="sendType == 2">{{ $t('send.randomPacket') }}</template>
           </p>
-          <p class="asset">ETH {{ $t('send.balance') }}：<span class="amount">{{ webUtil.addCommas(oneAmount, 2) }}</span></p>
+          <p class="asset">ETH {{ $t('send.balance') }}：<span class="amount">{{ webUtil.addCommas(ethAmount, 2) }}</span></p>
         </div>
         <div class="input-prizeCount">
           <p class="field">{{ $t('send.packetCount') }} <span class="unit">{{ $t('send.packetUnit') }}</span></p>
@@ -55,21 +55,23 @@
 </template>
 
 <script>
+import { ethers } from "ethers";
+
 export default {
   name: 'page-send',
   computed: {
     canSend: function () {
-      return (this.totalAmout && this.totalCount);
+      return (this.totalAmount && this.totalCount);
     },
     hasAmount: function () {
-      return (this.oneAmount != '-' && this.oneAmount > 0);
+      return (this.ethAmount != '-' && this.ethAmount > 0);
     }
   },
   data() {
     return {
       parent: null,
-      oneAmount: 0,
-      totalAmout: '',
+      ethAmount: 0,
+      totalAmount: '',
       totalCount: '',
       isSending: false,
       sendType: 1,
@@ -88,7 +90,7 @@ export default {
     },
     getBalance: async function (address) {
       if (!address) {
-        this.oneAmount = 0;
+        this.ethAmount = 0;
         return false;
       }
 
@@ -98,10 +100,8 @@ export default {
         duration: 0,
       });
       
-      let ret = await this.parent.hmny.blockchain.getBalance({
-        address: address
-      });
-      this.oneAmount = this.parent.hmny.utils.fromWei(this.parent.hmny.utils.hexToNumber(ret.result), 'one');
+      let ret = await this.parent.provider.getBalance(address);
+      this.ethAmount = ethers.utils.formatEther(ret)
 
       this.loadToast.clear();
     },
@@ -110,14 +110,14 @@ export default {
         this.$dialog.alert({
           message: this.$t('send.connWalletNotice'),
         }).then(() => {
-          this.totalAmout = '';
+          this.totalAmount = '';
         });
         return false;
       }
     },
-    send: function () {
-      if (this.totalAmout < 0.01) {
-        this.$notify({ type: 'danger', message: 'please increase your ONE token amount' });
+    send: async function () {
+      if (this.totalAmount < 0.01) {
+        this.$notify({ type: 'danger', message: 'please increase your ETH amount' });
         return false;
       }
 
@@ -129,40 +129,40 @@ export default {
       let seed = this.webUtil.randomNum(100000, 999999);
       let token = '0x000000000000000000000000000000000000bEEF';
 
-      let amount = (this.sendType == 1) ? this.totalAmout : this.totalAmout*this.totalCount;
-      let totalAmount = new this.parent.hmny.utils.Unit(amount).asOne().toWei();
-      
-      this.parent.contract.methods.sendSeedPacket(token, seed, this.sendType, totalAmount, this.totalCount).send({
+      let amount = (this.sendType == 1) ? this.totalAmount : this.totalAmount*this.totalCount;
+      let totalAmount = ethers.utils.formatUnits(ethers.utils.parseUnits(""+amount, "ether"), "wei")
+
+      const tx = await this.parent.contract.sendSeedPacket(token, seed, this.sendType, totalAmount.toString(), this.totalCount ,{
         value: totalAmount,
         gasLimit: this.contractConfig.defaultGasLimit,
-        gasPrice: new this.parent.hmny.utils.Unit(this.contractConfig.defaultGasPrice).asGwei().toWei(),
-      }).on('transactionHash', (hash) => {
-        console.log('hash', hash)
-        this.isSending = true;
-      }).on('receipt', (receipt) => {
+      })
+
+      console.log('tx', tx);
+      this.isSending = true;
+
+      try {
+        const receipt = await tx.wait();
         console.log('receipt', receipt)
-      }).on('confirmation', (confirmationNumber, receipt) => {
-        console.log('confirmationNumber', confirmationNumber, receipt)
-
-        this.isSending = false;
-        this.totalCount = '';
-        this.totalAmount = '';
-
-        this.getBalance(this.parent.address);
-
-        this.$dialog.confirm({
-          message: this.$t('send.successNotice'),
-        }).then(() => {
-          this.$router.push('/history');
-        }).catch();
-      }).on('data', (event) => {
-        console.log("event", event);
-      }).on('error', (error) => {
-        console.log('error', error);
+      } catch (e) {
+        console.log('error', e);
         this.isSending = false;
 
-        this.$notify({ type: 'danger', message: 'fail to send lucky packet: '+error });
-      });
+        this.$notify({ type: 'danger', message: 'fail to send lucky packet: '+e });
+        return
+      }
+
+
+      this.isSending = false;
+      this.totalCount = '';
+      this.totalAmount = '';
+
+      await this.getBalance(this.parent.address);
+
+      this.$dialog.confirm({
+        message: this.$t('send.successNotice'),
+      }).then(() => {
+        this.$router.push('/history');
+      }).catch();
     },
     changeSendType: function () {
       this.sendType = 3 - this.sendType;

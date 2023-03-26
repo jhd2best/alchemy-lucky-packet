@@ -15,7 +15,7 @@
             </van-dropdown-menu>
             <van-tag
               type="primary"
-              style="margin-left:15px"
+              style="margin-left:15px;display: none"
               v-if="'production' !== appMode"
             >TESTNET</van-tag>
           </template>
@@ -53,11 +53,11 @@
 
 <script>
 import { Locale } from 'vant';
+import { ethers } from "ethers";
 import enUS from 'vant/es/locale/lang/en-US';
 import zhCN from 'vant/es/locale/lang/zh-CN';
 
-const { Harmony } = require('@harmony-js/core');
-const { ChainType } = require('@harmony-js/utils');
+
 
 export default {
   name: 'App',
@@ -66,9 +66,8 @@ export default {
       appMode: 'development',
       isWalletConnecting: false,
       isWalletReady: false,
-      hmny: null,
       isOneWallet: false,
-      onewallet: null,
+      wallet: null,
       address: '',
       addressHex: '',
       contract: null,
@@ -88,50 +87,36 @@ export default {
   mounted: function() {
     Locale.use('en-US', enUS);
 
-    this.hmny = new Harmony(this.contractConfig.url[this.appMode],{chainType: ChainType.Harmony, chainId: 2});
-    this.hmny.setShardID(0);
-    
-    var triedTimes = 0;
-    var timer = setInterval(() => {
-      if (window.onewallet && window.onewallet.isOneWallet) {
-        this.onewallet = window.onewallet;
-        this.isWalletReady = true;
-
-        // load contract
-        this.contract = this.hmny.contracts.createContract(this.contractConfig.abi,this.contractConfig.address);
-
-        // attach onewallet
-        this.contract.wallet.signTransaction = async (tx)=>{
-          tx.from = this.address;
-          const signTx = await this.onewallet.signTransaction(tx);
-          console.log(signTx);
-          return signTx;
-        }
-
-        this.$refs.content.contract = this.contract;
-        clearInterval(timer)
-      } else {
-        triedTimes++;
-        if (triedTimes > 10) {
-          clearInterval(timer)
-          this.$notify({ type: 'danger', message: 'please use OneWallet' });
-        }
-      }
-    }, 500);
+    if (!window.ethereum) {
+      this.$notify({ type: 'danger', message: 'please install Metamask wallet' });
+    } else {
+      this.provider = new ethers.providers.Web3Provider(window.ethereum)
+      this.wallet = window.ethereum;
+      this.isWalletReady = true;
+    }
   },
   methods: {
     connectWallet: async function () {
       this.isWalletConnecting = true;
-      const getAccount = await this.onewallet.getAccount();
-      console.log(getAccount);
-      this.address = getAccount.address;
-      this.isAuthorized = true;
-      this.addressHex = new this.hmny.crypto.HarmonyAddress(getAccount.address).basicHex;
-      this.isWalletConnecting = false;
-      
-      await this.$refs.content.initPage();
 
-      this.$notify({ type: 'success', message: 'success connect OneWallet' });
+      this.provider.send("eth_requestAccounts", []).then(() => {
+        this.provider.listAccounts().then(async (accounts) => {
+          this.signer = this.provider.getSigner(accounts[0]);
+          // todo
+          console.log(this.signer);
+          this.address = accounts[0];
+          // this.addressHex = new this.hmny.crypto.HarmonyAddress(getAccount.address).basicHex;
+
+          this.isAuthorized = true;
+          this.isWalletConnecting = false;
+
+          this.contract = new ethers.Contract(this.contractConfig.address, this.contractConfig.abi, this.signer);
+          this.$refs.content.contract = this.contract;
+
+          await this.$refs.content.initPage();
+          this.$notify({ type: 'success', message: 'success connect wallet' });
+        });
+      });
     },
     tabbarChange: function (tab) {
       this.tarActive = tab;
@@ -155,7 +140,7 @@ export default {
       this.$dialog.confirm({
         message: this.$t('nav.logoutNotice'),
       }).then(async () => {
-        await this.onewallet.forgetIdentity();
+        await this.wallet.forgetIdentity();
         this.address = '';
         this.addressHex = '';
         this.isAuthorized = false;

@@ -81,30 +81,22 @@ export default {
         duration: 0,
       });
 
-      await this.parent.contract.methods.claimSeedPacket(this.packetId, seed).send({
-        gasLimit: this.contractConfig.defaultGasLimit,
-        gasPrice: new this.parent.hmny.utils.Unit(this.contractConfig.defaultGasPrice).asGwei().toWei(),
-      }).on('transactionHash', (hash) => {
-        console.log('hash', hash)
-      }).on('receipt', (receipt) => {
-        console.log('receipt', receipt)
-      }).on('confirmation', (status) => {
-        console.log('confirmation status: ', status)
-        if ('REJECTED' == status) {
-          this.$notify({ type: 'danger', message: 'fail to claim lucky packet: contract rejected' });
-        } else {
-          this.$notify({ type: 'success', message: 'claim lucky packet success' });
-        }
-        this.seed = '';
-      }).on('data', (event) => {
-        console.log("event", event);
-      }).on('error', (error) => {
-        console.log('error', error);
-
-        this.$notify({ type: 'danger', message: 'fail to claim lucky packet: '+error });
+      const tx = await this.parent.contract.claimSeedPacket(this.packetId, seed, {
+        gasLimit: this.contractConfig.defaultGasLimit
       });
 
+      try {
+        const receipt = await tx.wait();
+        console.log('receipt', receipt)
+      } catch (e) {
+        this.$notify({ type: 'danger', message: 'fail to claim lucky packet: '+e });
+        this.loadToast.clear();
+        return
+      }
+
+      this.seed = '';
       this.loadToast.clear();
+      this.$notify({ type: 'success', message: 'claim lucky packet success' });
     }
   },
 }
